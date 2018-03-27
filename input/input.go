@@ -9,6 +9,9 @@ import "time"
 import "github.com/springwiz/loggerdaemon/workpool"
 import "github.com/springwiz/loggerdaemon/output"
 import "strconv"
+import "sync"
+import "strings"
+import "sync/atomic"
 
 // Config for Input
 type Input struct {
@@ -26,22 +29,39 @@ type Input struct {
 
 	// Pointer to big cache
 	LogCache *bigcache.BigCache
+
+	// flag
+	terminate bool
+
+	// Key Indexes
+	lastReceivedKey uint64
+
+	lastSubmittedKey uint64
+
+	// Lock Mutex
+	lastlastReceivedMutex sync.Mutex
 }
 
-func New(host string, port string, protocol string, logCache *bigcache.BigCache) Input {
-	return Input{
-		Host:     host,
-		Port:     port,
-		Protocol: protocol,
-		Logger:   log.New(os.Stdout, "Input", log.Ldate|log.Ltime),
-		LogCache: logCache,
+var cache *bigcache.BigCache
+
+func New(host string, port string, protocol string, logCache *bigcache.BigCache) *Input {
+	cache = logCache
+	return &Input{
+		Host:             host,
+		Port:             port,
+		Protocol:         protocol,
+		Logger:           log.New(os.Stdout, "Input", log.Ldate|log.Ltime),
+		LogCache:         logCache,
+		lastReceivedKey:  0,
+		lastSubmittedKey: 0,
 	}
 }
 
 // polls the socket connection to pull data.
-func (i Input) Run() error {
+func (i *Input) Run() error {
 	readBuffer := make([]byte, 4096)
 	finalBytes := make([]byte, 0)
+	i.terminate = false
 
 	i.Logger.Println("Run Host: ", i.Host)
 	i.Logger.Println("Run Port: ", i.Port)
@@ -55,18 +75,11 @@ func (i Input) Run() error {
 	defer server.Close()
 	i.Logger.Println("Server started! Waiting for connections...")
 
-	// channel for sending out the messages to workers
-	messages := make(chan string, 1000)
+	// create workpool
+	workpool.PoolWorkers = workpool.NewWorkpool(10)
 
-	// create worker threads for handling the messages
-	// This starts up 10 workers, initially blocked
-	poolWorkers := workpool.NewWorkpool(i.LogCache)
-	for w := 1; w <= 10; w++ {
-		go poolWorkers.DoWork(w, messages)
-	}
-
-	// thread for retry channel
-	go poolWorkers.DoWork(11, output.RetryChannel)
+	// start the poller routine
+	go i.pollCache()
 
 	for {
 		connection, err := server.Accept()
@@ -84,28 +97,67 @@ func (i Input) Run() error {
 			len, eofError = io.ReadFull(connection, readBuffer)
 			finalBytes = append(finalBytes, readBuffer[0:len]...)
 			if eofError == io.EOF || eofError == io.ErrUnexpectedEOF {
-				i.Logger.Println("EOF encountered reading from the Server Socket: ", err)
+				i.Logger.Println("Receiving data: ", eofError.Error())
 				break
 			} else {
-				i.Logger.Println("No of bytes read sucessfully: ", len)
+				i.Logger.Println("Receiving data Bytes read: ", len)
 			}
 		}
 
 		// push the data into bigcache
-		key :=  time.Now().UnixNano()
-		keyString := strconv.FormatInt(key, 10)
+		i.lastlastReceivedMutex.Lock()
+		i.lastReceivedKey += 1
+		keyString := strconv.FormatUint(i.lastReceivedKey, 10)
 		i.LogCache.Set(keyString, finalBytes)
+		i.lastlastReceivedMutex.Unlock()
 
 		// empty buffer
 		readBuffer = make([]byte, 4096)
 		finalBytes = make([]byte, 0)
-
-		// pass the key and cache reference to worker
-		messages <- keyString
 	}
-
-	close(messages)
-	close(output.RetryChannel)
-	output.AmqpConnection.Close()
+	i.terminate = true
 	return nil
+}
+
+// polls the cache
+func (i *Input) pollCache() {
+	var counterKey uint64
+	for {
+		i.lastlastReceivedMutex.Lock()
+		counterKey = i.lastReceivedKey
+		i.lastlastReceivedMutex.Unlock()
+		if i.terminate {
+			i.Logger.Println("terminate")
+			break
+		} else if workpool.PoolWorkers.Hold {
+			time.Sleep(2 * 60 * 1000000000)
+			workpool.PoolWorkers.Hold = false
+		} else if counterKey > i.lastSubmittedKey {
+			i.Logger.Println("received submitted cache_size: ", i.lastReceivedKey, i.lastSubmittedKey, i.LogCache.Len())
+
+			// add the LogWriter to the worker pool
+			for i.lastSubmittedKey < counterKey {
+				var worker workpool.Worker
+				atomic.AddUint64(&i.lastSubmittedKey, 1)
+				worker = output.NewLogwriter(i.LogCache, strconv.FormatUint(i.lastSubmittedKey, 10))
+				workpool.PoolWorkers.AddTask(worker)
+			}
+		}
+		time.Sleep(1 * 1000000000)
+	}
+	defer workpool.PoolWorkers.Shutdown()
+}
+
+// retry the expiring key
+func RetryKey(key string, entry []byte) {
+	if strings.Contains(key, "SEQ") {
+		// its a sequence number
+		// delete the cache entry
+		cache.Delete(key)
+	} else {
+		// retry the key
+		var worker workpool.Worker
+		worker = output.NewLogwriter(cache, key)
+		workpool.PoolWorkers.AddTask(worker)
+	}
 }

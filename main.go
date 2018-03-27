@@ -48,7 +48,7 @@ func main() {
 		// callback fired when the oldest entry is removed because of its
 		// expiration time or no space left for the new entry. Default value is nil which
 		// means no callback and it prevents from unwrapping the oldest entry.
-		OnRemove: nil,
+		OnRemove: input.RetryKey,
 	}
 
 	cache, initErr := bigcache.NewBigCache(config)

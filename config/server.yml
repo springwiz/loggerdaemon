@@ -9,9 +9,10 @@ bigcache:
   maxEntrySize: 500
   verbose: true
   hardMaxCacheSize: 0
-amqp:
-  host: 192.168.99.100
-  port: 5672 
-  exchange: logexchange
-  user: 
-  password: 
+output:
+  - transport: amqp
+    host: 192.168.99.100
+    port: 5672 
+    exchange: logexchange
+    user: 
+    password: 

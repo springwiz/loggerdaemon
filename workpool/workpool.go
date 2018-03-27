@@ -2,50 +2,85 @@ package workpool
 
 import "log"
 import "os"
-import "github.com/allegro/bigcache"
-import "github.com/springwiz/loggerdaemon/output"
-import "strconv"
+import "sync"
+import "github.com/springwiz/loggerdaemon/common"
+import "fmt"
+import "time"
 
 // Config for Workpool
 type Workpool struct {
-	// Transport
-	LogTransport output.Transport
+	// Task workers
+	Tasks chan Worker
 
 	// Logger
 	Logger *log.Logger
 
-	// Pointer to big cache
-	LogCache *bigcache.BigCache
+	// Waitgroup
+	Wg sync.WaitGroup
+
+	// Error handling
+	Hold bool
 }
 
-func NewWorkpool(logCache *bigcache.BigCache) Workpool {
-	return Workpool{
-		LogTransport: output.NewTransport(),
-		Logger:       log.New(os.Stdout, "Workpool", log.Ldate|log.Ltime),
-		LogCache:     logCache,
-	}
+type Worker interface {
+	DoWork(id int, publishMap map[string]common.Publisher, seqNumber uint64) error
 }
 
-// Here's the worker, of which we'll run several
-// concurrent instances. These workers will receive
-// messages on the `messages` channel and write the messages to an amqp client
-func (w Workpool) DoWork(id int, messages <-chan string) {
-	publisher, err := output.New(w.LogTransport, w.LogCache, id)
-	if err != nil {
-		w.Logger.Println("Error creating publisher: ", err)
-		os.Exit(1)
+var PoolWorkers *Workpool
+
+func NewWorkpool(maxGoRoutines int) *Workpool {
+	w := Workpool{
+		Tasks:  make(chan Worker, 1000),
+		Logger: log.New(os.Stdout, "Workpool", log.Ldate|log.Ltime),
+		Hold:   false,
 	}
-	var seqNumber uint64
-	seqNumber = 1
-	for j := range messages {
-		w.Logger.Println("worker", id, "started  job", j)
-		messageBody, err1 := w.LogCache.Get(j)
-		if err1 != nil {
-			w.Logger.Printf("The key (%d) not available in cache skipping", j)
-		}
-		w.LogCache.Set(strconv.Itoa(id)+strconv.FormatUint(seqNumber, 10), []byte(j))
-		publisher.Publish(messageBody)
-		seqNumber++
-		w.Logger.Println("worker", id, "finished job", j)
+	w.Wg.Add(maxGoRoutines)
+	for i := 1; i <= maxGoRoutines; i++ {
+		go func(indx int) {
+			w.Logger.Println("worker", indx, "started")
+			publishMap := make(map[string]common.Publisher)
+			var seqNumber uint64
+			seqNumber = 1
+			for t := range w.Tasks {
+				err := t.DoWork(indx, publishMap, seqNumber)
+				if err != nil {
+					// sleep before retrying
+					w.recoverFromError()
+					seqNumber = 1
+					time.Sleep(2 * 60 * 1000000000)
+					t.DoWork(indx, publishMap, seqNumber)
+				}
+				seqNumber += 1
+			}
+			defer w.Wg.Done()
+			defer w.cleanupPublisher(publishMap)
+		}(i)
+	}
+	return &w
+}
+
+// addTask submits work to the pool.
+func (w *Workpool) AddTask(worker Worker) {
+	w.Tasks <- worker
+}
+
+// Shutdown waits for all the goroutines to shutdown.
+func (w *Workpool) Shutdown() {
+	close(w.Tasks)
+	w.Wg.Wait()
+}
+
+// recover from error
+func (w *Workpool) recoverFromError() {
+	if r := recover(); r != nil {
+		fmt.Println("recovered from ", r)
+	}
+	w.Hold = true
+}
+
+// clean up the publishers
+func (w *Workpool) cleanupPublisher(publishMap map[string]common.Publisher) {
+	for _, v := range publishMap {
+		v.Cleanup()
 	}
 }
