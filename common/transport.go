@@ -1,7 +1,10 @@
 package common
 
-import "log"
-import "github.com/spf13/viper"
+import (
+	"log"
+
+	"github.com/spf13/viper"
+)
 
 // Config for Transport
 type Transport struct {
@@ -45,10 +48,14 @@ func GetTransportSlice() []Transport {
 		transport := new(Transport)
 		transport.Host = outputMap["host"].(string)
 		transport.LogExchange = outputMap["exchange"].(string)
-		transport.Password = outputMap["password"].(string)
+		if outputMap["password"] != nil {
+			transport.Password = outputMap["password"].(string)
+		}
 		transport.Port = outputMap["port"].(string)
 		transport.Transport = outputMap["transport"].(string)
-		transport.User = outputMap["user"].(string)
+		if outputMap["user"] != nil {
+			transport.User = outputMap["user"].(string)
+		}
 		transSlice = append(transSlice, *transport)
 	}
 	return transSlice

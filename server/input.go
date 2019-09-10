@@ -1,17 +1,20 @@
-package input
+package main
 
-import "log"
-import "os"
-import "net"
-import "io"
-import "github.com/allegro/bigcache"
-import "time"
-import "github.com/springwiz/loggerdaemon/workpool"
-import "github.com/springwiz/loggerdaemon/output"
-import "strconv"
-import "sync"
-import "strings"
-import "sync/atomic"
+import (
+	"io"
+	"net"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/allegro/bigcache"
+	log "github.com/sirupsen/logrus"
+	"github.com/springwiz/loggerdaemon/output"
+	"github.com/springwiz/loggerdaemon/workpool"
+)
 
 // Config for Input
 type Input struct {
@@ -23,9 +26,6 @@ type Input struct {
 
 	// Protocol used
 	Protocol string
-
-	// Logger
-	Logger *log.Logger
 
 	// Pointer to big cache
 	LogCache *bigcache.BigCache
@@ -50,7 +50,6 @@ func New(host string, port string, protocol string, logCache *bigcache.BigCache)
 		Host:             host,
 		Port:             port,
 		Protocol:         protocol,
-		Logger:           log.New(os.Stdout, "Input", log.Ldate|log.Ltime),
 		LogCache:         logCache,
 		lastReceivedKey:  0,
 		lastSubmittedKey: 0,
@@ -63,17 +62,17 @@ func (i *Input) Run() error {
 	finalBytes := make([]byte, 0)
 	i.terminate = false
 
-	i.Logger.Println("Run Host: ", i.Host)
-	i.Logger.Println("Run Port: ", i.Port)
-	i.Logger.Println("Run protocol: ", i.Protocol)
+	log.Println("Run Host: ", i.Host)
+	log.Println("Run Port: ", i.Port)
+	log.Println("Run protocol: ", i.Protocol)
 
 	server, err := net.Listen(i.Protocol, i.Host+":"+i.Port)
 	if err != nil {
-		i.Logger.Println("Error listetning: ", err)
+		log.Println("Error listetning: ", err)
 		os.Exit(1)
 	}
 	defer server.Close()
-	i.Logger.Println("Server started! Waiting for connections...")
+	log.Println("Server started! Waiting for connections...")
 
 	// create workpool
 	workpool.PoolWorkers = workpool.NewWorkpool(10)
@@ -84,7 +83,7 @@ func (i *Input) Run() error {
 	for {
 		connection, err := server.Accept()
 		if err != nil {
-			i.Logger.Println("Error: ", err)
+			log.Println("Error: ", err)
 			os.Exit(1)
 		}
 		defer connection.Close()
@@ -97,10 +96,10 @@ func (i *Input) Run() error {
 			len, eofError = io.ReadFull(connection, readBuffer)
 			finalBytes = append(finalBytes, readBuffer[0:len]...)
 			if eofError == io.EOF || eofError == io.ErrUnexpectedEOF {
-				i.Logger.Println("Receiving data: ", eofError.Error())
+				log.Println("Receiving data: ", eofError.Error())
 				break
 			} else {
-				i.Logger.Println("Receiving data Bytes read: ", len)
+				log.Println("Receiving data Bytes read: ", len)
 			}
 		}
 
@@ -127,13 +126,13 @@ func (i *Input) pollCache() {
 		counterKey = i.lastReceivedKey
 		i.lastlastReceivedMutex.Unlock()
 		if i.terminate {
-			i.Logger.Println("terminate")
+			log.Println("terminate")
 			break
 		} else if workpool.PoolWorkers.Hold {
 			time.Sleep(2 * 60 * 1000000000)
 			workpool.PoolWorkers.Hold = false
 		} else if counterKey > i.lastSubmittedKey {
-			i.Logger.Println("received submitted cache_size: ", i.lastReceivedKey, i.lastSubmittedKey, i.LogCache.Len())
+			log.Println("received submitted cache_size: ", i.lastReceivedKey, i.lastSubmittedKey, i.LogCache.Len())
 
 			// add the LogWriter to the worker pool
 			for i.lastSubmittedKey < counterKey {

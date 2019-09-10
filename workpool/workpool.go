@@ -1,19 +1,18 @@
 package workpool
 
-import "log"
-import "os"
-import "sync"
-import "github.com/springwiz/loggerdaemon/common"
-import "fmt"
-import "time"
+import (
+	"fmt"
+	"sync"
+	"time"
+
+	log "github.com/sirupsen/logrus"
+	"github.com/springwiz/loggerdaemon/common"
+)
 
 // Config for Workpool
 type Workpool struct {
 	// Task workers
 	Tasks chan Worker
-
-	// Logger
-	Logger *log.Logger
 
 	// Waitgroup
 	Wg sync.WaitGroup
@@ -30,14 +29,13 @@ var PoolWorkers *Workpool
 
 func NewWorkpool(maxGoRoutines int) *Workpool {
 	w := Workpool{
-		Tasks:  make(chan Worker, 1000),
-		Logger: log.New(os.Stdout, "Workpool", log.Ldate|log.Ltime),
-		Hold:   false,
+		Tasks: make(chan Worker, 1000),
+		Hold:  false,
 	}
 	w.Wg.Add(maxGoRoutines)
 	for i := 1; i <= maxGoRoutines; i++ {
 		go func(indx int) {
-			w.Logger.Println("worker", indx, "started")
+			log.Println("worker", indx, "started")
 			publishMap := make(map[string]common.Publisher)
 			var seqNumber uint64
 			seqNumber = 1

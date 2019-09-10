@@ -1,21 +1,18 @@
 package main
 
-import "github.com/springwiz/loggerdaemon/input"
-import "log"
-import "os"
-import "github.com/spf13/viper"
-import "github.com/allegro/bigcache"
-import "time"
+import (
+	"os"
+	"time"
 
-func init() {
-	// Change the device for logging to stdout
-	log.SetOutput(os.Stdout)
-}
+	"github.com/allegro/bigcache"
+	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
+)
 
 func main() {
 	// read the config yml
 	viper.SetConfigName("server")
-	viper.AddConfigPath("/Users/sumit/go")
+	viper.AddConfigPath("..")
 	err := viper.ReadInConfig()
 	host := "localhost"
 	port := "9999"
@@ -48,14 +45,14 @@ func main() {
 		// callback fired when the oldest entry is removed because of its
 		// expiration time or no space left for the new entry. Default value is nil which
 		// means no callback and it prevents from unwrapping the oldest entry.
-		OnRemove: input.RetryKey,
+		OnRemove: RetryKey,
 	}
 
 	cache, initErr := bigcache.NewBigCache(config)
 	if initErr != nil {
 		log.Fatal(initErr)
 	}
-	err1 := input.New(host, port, protocol, cache).Run()
+	err1 := New(host, port, protocol, cache).Run()
 	if err1 != nil {
 		log.Fatal(err)
 		os.Exit(1)
