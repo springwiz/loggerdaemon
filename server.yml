@@ -12,7 +12,7 @@ bigcache:
 output:
   - transport: amqp
     host: 192.168.99.100
-    port: 5672 
+    port: 5672
     exchange: logexchange
-    user: 
-    password: 
+    user:
+    password:

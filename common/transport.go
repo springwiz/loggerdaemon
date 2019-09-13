@@ -2,6 +2,7 @@ package common
 
 import (
 	"log"
+	"strconv"
 
 	"github.com/spf13/viper"
 )
@@ -51,7 +52,7 @@ func GetTransportSlice() []Transport {
 		if outputMap["password"] != nil {
 			transport.Password = outputMap["password"].(string)
 		}
-		transport.Port = outputMap["port"].(string)
+		transport.Port = strconv.Itoa(outputMap["port"].(int))
 		transport.Transport = outputMap["transport"].(string)
 		if outputMap["user"] != nil {
 			transport.User = outputMap["user"].(string)

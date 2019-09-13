@@ -1,13 +1,16 @@
 package output
 
-import "log"
-import "fmt"
-import "os"
-import "github.com/streadway/amqp"
-import "github.com/allegro/bigcache"
-import "strconv"
-import "strings"
-import "github.com/springwiz/loggerdaemon/common"
+import (
+	"fmt"
+	"log"
+	"os"
+	"strconv"
+	"strings"
+
+	"github.com/allegro/bigcache"
+	"github.com/springwiz/loggerdaemon/common"
+	"github.com/streadway/amqp"
+)
 
 // Config for AmqpPublisher
 type AmqpPublisher struct {
@@ -49,11 +52,11 @@ func createPublisher(logTransport common.Transport, logCache *bigcache.BigCache,
 func newAmqpPublisher(logTransport common.Transport, logCache *bigcache.BigCache, threadId int) (AmqpPublisher, error) {
 	var urlSecurity string
 	if logTransport.User != "" && logTransport.Password != "" {
-		urlSecurity = logTransport.User + ":" + logTransport.Password + "@"
+		urlSecurity = fmt.Sprintf("%s:%s@", logTransport.User, logTransport.Password)
 	} else {
 		urlSecurity = ""
 	}
-	uri := logTransport.Transport + "://" + urlSecurity + logTransport.Host + ":" + logTransport.Port + "/"
+	uri := fmt.Sprintf("%s://%s%s:%s/", logTransport.Transport, urlSecurity, logTransport.Host, logTransport.Port)
 	log.Printf("dialing %q", uri)
 
 	// grab an amqp connection

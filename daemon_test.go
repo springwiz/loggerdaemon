@@ -12,7 +12,7 @@ import (
 func TestLoggerDaemon(t *testing.T) {
 	// read the config yml
 	viper.SetConfigName("server")
-	viper.AddConfigPath("..")
+	viper.AddConfigPath(".")
 	err := viper.ReadInConfig()
 	host := "localhost"
 	port := "9999"
