@@ -28,7 +28,7 @@ jobs:
       run: go build -v .
       
     - name: Golangci-lint
-      run: & 
+      run: |
         wget -O - -q https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s v1.17.1
         golangci-lint run
       
