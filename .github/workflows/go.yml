@@ -30,7 +30,7 @@ jobs:
     - name: Golangci-lint
       run: |
         wget -O - -q https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s v1.17.1
-        golangci-lint run
+        ./bin/golangci-lint run
       
     - name: Test
       run: go test ./... 
