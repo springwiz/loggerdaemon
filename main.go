@@ -14,19 +14,18 @@ func main() {
 	viper.SetConfigName("server")
 	viper.AddConfigPath(".")
 	err := viper.ReadInConfig()
-	host := "localhost"
-	port := "9999"
-	protocol := "tcp"
-
+	var host, port, protocol string
 	if err != nil {
-		log.Println("Config file not found...")
-		log.Println("Using Defaults")
+		log.Warnf("Config file not found...")
+		log.Warnf("Using Defaults")
+		host = "localhost"
+		port = "9999"
+		protocol = "tcp"
+	} else {
+		host = viper.GetString("server.host")
+		port = viper.GetString("server.port")
+		protocol = viper.GetString("server.protocol")
 	}
-
-	host = viper.GetString("server.host")
-	port = viper.GetString("server.port")
-	protocol = viper.GetString("server.protocol")
-
 	config := bigcache.Config{
 		// number of shards (must be a power of 2)
 		Shards: viper.GetInt("bigcache.shards"),

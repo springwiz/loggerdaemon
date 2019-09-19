@@ -14,30 +14,31 @@ func TestLoggerDaemon(t *testing.T) {
 	viper.SetConfigName("server")
 	viper.AddConfigPath(".")
 	err := viper.ReadInConfig()
-	host := "localhost"
-	port := "9999"
-	protocol := "tcp"
-
+	var host, port, protocol string
 	if err != nil {
 		log.Infof("Config file not found...")
 		log.Infof("Using Defaults")
+		host = "localhost"
+		port = "9999"
+		protocol = "tcp"
+	} else {
+		host = viper.GetString("server.host")
+		port = viper.GetString("server.port")
+		protocol = viper.GetString("server.protocol")
 	}
-
-	host = viper.GetString("server.host")
-	port = viper.GetString("server.port")
-	protocol = viper.GetString("server.protocol")
-
 	log.Infof("Run Host: %s", host)
 	log.Infof("Run Port: %s", port)
 	log.Infof("Run protocol: %s", protocol)
 
 	// grab a tcp connection
-	conn, err := net.Dial(protocol, host+":"+port)
-	io.WriteString(conn, "Test String Msg")
-
+	var conn net.Conn
+	conn, err = net.Dial(protocol, host+":"+port)
 	if err != nil {
 		t.Error(err.Error())
 	}
-
+	_, err = io.WriteString(conn, "Test String Msg")
+	if err != nil {
+		t.Error(err.Error())
+	}
 	defer conn.Close()
 }

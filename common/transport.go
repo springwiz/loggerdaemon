@@ -1,9 +1,9 @@
 package common
 
 import (
-	"log"
 	"strconv"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
@@ -36,8 +36,8 @@ func GetTransportSlice() []Transport {
 	transSlice := make([]Transport, 0)
 
 	if err != nil {
-		log.Println("Config file not found...")
-		log.Println("Using Defaults")
+		log.Warnf("Config file not found...")
+		log.Warnf("Using Defaults")
 		transSlice = append(transSlice, Transport{"amqp", "localhost", "5672", "logexchange", "", ""})
 		return transSlice
 	}
@@ -65,26 +65,27 @@ func GetTransportSlice() []Transport {
 func NewTransport() Transport {
 	// read the config yml
 	viper.SetConfigName("server")
-	viper.AddConfigPath("/Users/sumit/go")
+	viper.AddConfigPath("..")
 	err := viper.ReadInConfig()
-	transport := "amqp"
-	host := "localhost"
-	port := "5672"
-	exchange := "logexchange"
-	user := ""
-	password := ""
+	var transport, host, port, exchange, user, password string
 
 	if err != nil {
-		log.Println("Config file not found...")
-		log.Println("Using Defaults")
+		log.Warnf("Config file not found...")
+		log.Warnf("Using Defaults")
+		transport = "amqp"
+		host = "localhost"
+		port = "5672"
+		exchange = "logexchange"
+		user = ""
+		password = ""
+	} else {
+		transport = viper.GetString("output.transport")
+		host = viper.GetString("output.host")
+		port = viper.GetString("output.port")
+		exchange = viper.GetString("output.exchange")
+		user = viper.GetString("output.user")
+		password = viper.GetString("output.password")
 	}
-
-	transport = viper.GetString("output.transport")
-	host = viper.GetString("output.host")
-	port = viper.GetString("output.port")
-	exchange = viper.GetString("output.exchange")
-	user = viper.GetString("output.user")
-	password = viper.GetString("output.password")
 
 	return Transport{
 		Transport:   transport,

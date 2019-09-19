@@ -2,12 +2,11 @@ package output
 
 import (
 	"fmt"
-	"log"
-	"os"
 	"strconv"
 	"strings"
 
 	"github.com/allegro/bigcache"
+	log "github.com/sirupsen/logrus"
 	"github.com/springwiz/loggerdaemon/common"
 	"github.com/streadway/amqp"
 )
@@ -19,9 +18,6 @@ type AmqpPublisher struct {
 
 	// amqp uri
 	Uri string
-
-	// Logger
-	Logger *log.Logger
 
 	// Amqp Channel
 	AmqpChannel *amqp.Channel
@@ -40,16 +36,12 @@ func createPublisher(logTransport common.Transport, logCache *bigcache.BigCache,
 	var publisher common.Publisher
 	var err error
 	if strings.Contains(logTransport.Transport, "amqp") {
-		publisher, err = newAmqpPublisher(logTransport, logCache, threadId)
-	} else if strings.Contains(logTransport.Transport, "kafka") {
-		// TODO: write support code for kafka
-	} else {
-		// TODO: write support code for jms
+		publisher, err = NewAmqpPublisher(logTransport, logCache, threadId)
 	}
 	return publisher, err
 }
 
-func newAmqpPublisher(logTransport common.Transport, logCache *bigcache.BigCache, threadId int) (AmqpPublisher, error) {
+func NewAmqpPublisher(logTransport common.Transport, logCache *bigcache.BigCache, threadId int) (AmqpPublisher, error) {
 	var urlSecurity string
 	if logTransport.User != "" && logTransport.Password != "" {
 		urlSecurity = fmt.Sprintf("%s:%s@", logTransport.User, logTransport.Password)
@@ -85,7 +77,6 @@ func newAmqpPublisher(logTransport common.Transport, logCache *bigcache.BigCache
 	return AmqpPublisher{
 		LogTransport:   logTransport,
 		Uri:            uri,
-		Logger:         log.New(os.Stdout, "AmqpPublisher", log.Ldate|log.Ltime),
 		AmqpChannel:    channel,
 		LogCache:       logCache,
 		ThreadId:       threadId,
@@ -94,7 +85,7 @@ func newAmqpPublisher(logTransport common.Transport, logCache *bigcache.BigCache
 }
 
 func (p AmqpPublisher) Publish(messageBody []byte) error {
-	p.Logger.Printf("enabling publishing confirms.")
+	log.Infof("enabling publishing confirms.")
 	if err := p.AmqpChannel.Confirm(false); err != nil {
 		return fmt.Errorf("Channel could not be put into confirm mode: %s", err)
 	}
@@ -126,24 +117,24 @@ func (p AmqpPublisher) Publish(messageBody []byte) error {
 // set of unacknowledged sequence numbers and loop until the publishing channel
 // is closed.
 func (p AmqpPublisher) confirmOne(confirms <-chan amqp.Confirmation) {
-	p.Logger.Printf("waiting for confirmation of one publishing")
+	log.Infof("waiting for confirmation of one publishing")
 	confirmed := <-confirms
 
 	// find the key in the cache using the ack no
-	p.Logger.Println("Got id seqNumber", p.ThreadId, confirmed.DeliveryTag)
+	log.Infof("Got id seqNumber %d %d", p.ThreadId, confirmed.DeliveryTag)
 	keyBytes, err := p.LogCache.Get("SEQ" + strconv.Itoa(p.ThreadId) + strconv.FormatUint(confirmed.DeliveryTag, 10))
 	if err != nil {
-		p.Logger.Printf("The key (%s) not available in cache skipping", string(keyBytes))
+		log.Infof("The key (%s) not available in cache skipping", string(keyBytes))
 	}
 
 	if confirmed.Ack {
 		// ack received clean up the log cache
-		p.Logger.Printf("successful delivery of delivery tag: %d", confirmed.DeliveryTag)
-		p.LogCache.Delete("SEQ" + strconv.Itoa(p.ThreadId) + strconv.FormatUint(confirmed.DeliveryTag, 10))
-		p.LogCache.Delete(string(keyBytes))
+		log.Infof("successful delivery of delivery tag: %d", confirmed.DeliveryTag)
+		_ = p.LogCache.Delete("SEQ" + strconv.Itoa(p.ThreadId) + strconv.FormatUint(confirmed.DeliveryTag, 10))
+		_ = p.LogCache.Delete(string(keyBytes))
 	} else {
 		// retry the msg not ack from rabbit mq
-		p.Logger.Printf("failed delivery of delivery tag: %d", confirmed.DeliveryTag)
+		log.Infof("failed delivery of delivery tag: %d", confirmed.DeliveryTag)
 	}
 }
 

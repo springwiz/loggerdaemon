@@ -40,26 +40,26 @@ func (l Logwriter) DoWork(id int, publishMap map[string]common.Publisher, seqNum
 			publishMap[transInstance.Transport] = publisher
 		} else {
 			publisher = publishMap[transInstance.Transport]
-			log.Println("Using existing publisher ")
+			log.Infof("Using existing publisher ")
 		}
 		if err != nil {
-			log.Println("Error creating publisher: ", err)
+			log.Infof("Error creating publisher: %s", err)
 			delete(publishMap, transInstance.Transport)
 			return err
 		}
 		messageBody, err1 := l.LogCache.Get(l.Key)
 		if err1 != nil {
-			log.Println("The key ", l.Key, "not available in cache skipping")
+			log.Infof("The key %s not available in cache skipping", l.Key)
 		}
-		l.LogCache.Set("SEQ"+strconv.Itoa(id)+strconv.FormatUint(seqNumber, 10), []byte(l.Key))
-		log.Println("worker", id, "Set seqNumber key", seqNumber, l.Key)
+		_ = l.LogCache.Set("SEQ"+strconv.Itoa(id)+strconv.FormatUint(seqNumber, 10), []byte(l.Key))
+		log.Infof("worker %d Set seqNumber key %d %s", id, seqNumber, l.Key)
 		err2 := publisher.Publish(messageBody)
 		if err2 != nil {
-			log.Println("Error creating channel: ", err2)
+			log.Infof("Error creating channel: %s", err2)
 			delete(publishMap, transInstance.Transport)
 			return err2
 		}
-		log.Println("worker", id, "finished key", l.Key)
+		log.Infof("worker %d finished key %s", id, l.Key)
 	}
 	return nil
 }

@@ -14,6 +14,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/springwiz/loggerdaemon/output"
 	"github.com/springwiz/loggerdaemon/workpool"
+	uber "go.uber.org/atomic"
 )
 
 // Config for Input
@@ -31,7 +32,7 @@ type Input struct {
 	LogCache *bigcache.BigCache
 
 	// flag
-	terminate bool
+	terminate *uber.Bool
 
 	// Key Indexes
 	lastReceivedKey uint64
@@ -60,15 +61,15 @@ func New(host string, port string, protocol string, logCache *bigcache.BigCache)
 func (i *Input) Run() error {
 	readBuffer := make([]byte, 4096)
 	finalBytes := make([]byte, 0)
-	i.terminate = false
+	i.terminate = uber.NewBool(false)
 
-	log.Println("Run Host: ", i.Host)
-	log.Println("Run Port: ", i.Port)
-	log.Println("Run protocol: ", i.Protocol)
+	log.Infof("Run Host: %s", i.Host)
+	log.Infof("Run Port: %s", i.Port)
+	log.Infof("Run protocol: %s", i.Protocol)
 
 	server, err := net.Listen(i.Protocol, i.Host+":"+i.Port)
 	if err != nil {
-		log.Println("Error listetning: ", err)
+		log.Warnf("Error listetning: %s", err)
 		os.Exit(1)
 	}
 	defer server.Close()
@@ -83,10 +84,11 @@ func (i *Input) Run() error {
 	for {
 		connection, err := server.Accept()
 		if err != nil {
-			log.Println("Error: ", err)
+			log.Errorf("Error: %s", err)
 			os.Exit(1)
 		}
 		defer connection.Close()
+		defer i.terminate.Store(true)
 
 		// read all bytes from the connection
 		// append into a byte slice
@@ -105,17 +107,15 @@ func (i *Input) Run() error {
 
 		// push the data into bigcache
 		i.lastlastReceivedMutex.Lock()
-		i.lastReceivedKey += 1
+		i.lastReceivedKey++
 		keyString := strconv.FormatUint(i.lastReceivedKey, 10)
-		i.LogCache.Set(keyString, finalBytes)
+		_ = i.LogCache.Set(keyString, finalBytes)
 		i.lastlastReceivedMutex.Unlock()
 
 		// empty buffer
 		readBuffer = make([]byte, 4096)
 		finalBytes = make([]byte, 0)
 	}
-	i.terminate = true
-	return nil
 }
 
 // polls the cache
@@ -125,12 +125,12 @@ func (i *Input) pollCache() {
 		i.lastlastReceivedMutex.Lock()
 		counterKey = i.lastReceivedKey
 		i.lastlastReceivedMutex.Unlock()
-		if i.terminate {
+		if i.terminate.Load() {
 			log.Println("terminate")
 			break
-		} else if workpool.PoolWorkers.Hold {
+		} else if workpool.PoolWorkers.IsPaused() {
 			time.Sleep(2 * 60 * 1000000000)
-			workpool.PoolWorkers.Hold = false
+			workpool.PoolWorkers.Resume()
 		} else if counterKey > i.lastSubmittedKey {
 			log.Println("received submitted cache_size: ", i.lastReceivedKey, i.lastSubmittedKey, i.LogCache.Len())
 
@@ -152,11 +152,10 @@ func RetryKey(key string, entry []byte) {
 	if strings.Contains(key, "SEQ") {
 		// its a sequence number
 		// delete the cache entry
-		cache.Delete(key)
+		_ = cache.Delete(key)
 	} else {
 		// retry the key
-		var worker workpool.Worker
-		worker = output.NewLogwriter(cache, key)
+		worker := output.NewLogwriter(cache, key)
 		workpool.PoolWorkers.AddTask(worker)
 	}
 }
